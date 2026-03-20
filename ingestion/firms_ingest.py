@@ -19,12 +19,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def fetch_firms_data(api_key: str, days_back: int = 7, bounding_box = (-109.06, 36.99, -102.04, 41.00)):
+def fetch_firms_data(api_key: str, days_back: int = 5, bounding_box = (-109.06, 36.99, -102.04, 41.00)):
     """ 
     This function reads in the api_key and pulls data from the number of days assigned to the days_back variable
     Args:
         api_key: NASA FIRMS API key
-        days_back: Number of days of data to fetch, max is 10 for free tier
+        days_back: Number of days of data to fetch, max is 5 for free tier
     Returns:
         Dataframe of raw fire detections, or empty dataframe is the fetch fails
     """
@@ -172,8 +172,8 @@ def main():
     
     start_time = datetime.now()
     raw_df = fetch_firms_data(api_key)
-    qa_df = validate_detections(raw_df, database_url)
-    records_loaded_count = load_to_postgres(qa_df)
+    qa_df = validate_detections(raw_df)
+    records_loaded_count = load_to_postgres(qa_df, database_url)
 
     if records_loaded_count > 0:
         logger.info(f"{records_loaded_count} loaded into the database successfully")
