@@ -41,3 +41,47 @@ def fetch_firms_data(api_key: str, days_back: int = 7, bounding_box = (-109.06, 
     except requests.exceptions.RequestException as e:
         logger.error(f"Something went wrong: {e}")
         return pd.DataFrame()
+    
+
+def validate_detections(df: pd.DataFrame, bounding_box = (-109.06, 36.99, -102.04, 41.00)):
+    """
+    This function acts as a QA gate. It checks the necessary columns exist upon ingest, that the coordinates are not null,
+    that the coordinates are within bounds (starting with within CO), and that the values are physically plausible.
+
+    It returns only validated detections.
+    """
+    # Assign coordinates
+    west, south, east, north = bounding_box
+
+    # Establish required format
+    required_columns = ['latitude', 'longitude', 'bright_ti4', 'frp', 'confidence', 'acq_date', 'acq_time']
+    
+    # Track record count and how many rows are removed for which reason
+    initial_count = len(df)
+    logger.info(f"There are initially {initial_count} entries")
+
+    missing_columns = [col for col in required_columns if col not in df.columns] # Checks format
+    if missing_columns:
+        logger.error(f"Missing required columns: {missing_columns}")
+        return pd.DataFrame()
+
+    df = df.dropna(subset=['latitude', 'longitude']) # Drops na in lat / long columns
+    na_drop_count = len(df)
+    logger.info(f"There are now {na_drop_count} entries")
+
+    df = df[
+        (df['latitude'] >= south) &
+        (df['latitude'] <= north) &
+        (df['longitude'] >= west) &
+        (df['longitude'] <= east)
+    ] # Makes sure coordiantes are within bounds
+
+    # Check brightness plausibility
+    df = df[(df['bright_ti4'] >= 200) & (df['bright_ti4'] <= 500)]
+
+    # Check FRP plausibility
+    df = df[df['frp'] > 0]
+
+    logger.info(f"{len(df)} of {initial_count} records passed all QA checks")
+    return df
+
