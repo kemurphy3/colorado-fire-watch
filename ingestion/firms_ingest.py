@@ -85,3 +85,101 @@ def validate_detections(df: pd.DataFrame, bounding_box = (-109.06, 36.99, -102.0
     logger.info(f"{len(df)} of {initial_count} records passed all QA checks")
     return df
 
+
+def load_to_postgres(df: pd.DataFrame, database_url: str):
+    """
+    This function takes the validated DataFrame and writes it to the PostgreSQL database.
+
+    It connects to the database, inserts each row, and returns a count.
+    """
+    # Check that the DataFrame exists and isn't empty
+    if df.empty:
+        return 0
+    
+    # Create the database engine
+    engine = create_engine(database_url)
+
+    # Create a count to track records loaded. Initialized to 0.
+    records_loaded = 0
+
+    # Insert one row into raw_detections_table
+    insert_sql = text("""
+        INSERT INTO raw_fire_detections(
+                source_satellite,
+                detection_date,
+                detection_time,
+                latitude,
+                longitude,
+                brightness,
+                confidence,
+                frp,
+                geom
+            ) VALUES (
+                :satellite,
+                :detection_date,
+                :detection_time,
+                :latitude,
+                :longitude,
+                :brightness,
+                :confidence,
+                :frp,
+                ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)
+            )
+    """)
+    
+    # Roll into loop. Log error, but do not exit if single row does not ingest
+    with engine.connect() as conn:
+        for _, row in df.iterrows():
+            try:
+                conn.execute(insert_sql, {
+                    'satellite': 'VIIRS_SNPP',
+                    'detection_date': row['acq_date'],
+                    'detection_time': row['acq_time'],
+                    'latitude': float(row['latitude']),
+                    'longitude': float(row['longitude']),
+                    'brightness': row['bright_ti4'],
+                    'confidence': str(row['confidence']),
+                    'frp': float(row['frp']),
+                })
+                records_loaded += 1
+            except Exception as e:
+                logger.error(f"Failed to insert row: {e}")
+                continue
+        conn.commit()
+    
+    logger.info(f"There were {records_loaded} records loaded")
+    return records_loaded
+    
+
+def main():
+    """
+    This function reads in the data from FIRMS using fetch_firms_data. 
+    Then it runs the DataFrame through the QA checks in validate_detections.
+    Then that cleaned data gets passed to load_to_postgres
+    """
+    
+    # Read in the values from .env file
+    api_key = os.getenv('FIRMS_API_KEY')
+    database_url = os.getenv('DATABASE_URL')
+
+    # Check validity of values from .env
+    if not api_key:
+        logger.error(f"The FIRMS API key not found in the environment")
+        return 
+    if not database_url:
+        logger.error(f"The database url not found in the environment")
+        return 
+    
+    start_time = datetime.now()
+    raw_df = fetch_firms_data(api_key)
+    qa_df = validate_detections(raw_df, database_url)
+    records_loaded_count = load_to_postgres(qa_df)
+
+    if records_loaded_count > 0:
+        logger.info(f"{records_loaded_count} loaded into the database successfully")
+    
+    elapsed = datetime.now() - start_time
+    logger.info(f"FIRMS ingest completed in {elapsed.total_seconds():.1f} seconds")
+
+if __name__ == "__main__":
+    main()
