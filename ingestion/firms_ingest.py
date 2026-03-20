@@ -125,6 +125,7 @@ def load_to_postgres(df: pd.DataFrame, database_url: str):
                 :frp,
                 ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)
             )
+            ON CONFLICT ON CONSTRAINT unique_detection DO NOTHING 
     """)
     
     # Roll into loop. Log error, but do not exit if single row does not ingest

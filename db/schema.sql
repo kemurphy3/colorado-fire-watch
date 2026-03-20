@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS raw_fire_detections (
     track           FLOAT,
     confidence      VARCHAR(10),
     frp             FLOAT,
-    geom            GEOMETRY(Point, 4326)
+    geom            GEOMETRY(Point, 4326),
+    CONSTRAINT unique_detection UNIQUE (latitude, longitude, detection_date, detection_time)
 );
 
 -- Historical fire perimeters from MTBS
