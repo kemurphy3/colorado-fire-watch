@@ -99,10 +99,25 @@ def load_to_postgres(df: pd.DataFrame, database_url: str):
     # Create the database engine
     engine = create_engine(database_url)
 
-    # Create a count to track records loaded. Initialized to 0.
-    records_loaded = 0
+    # Rename columns to match database schema
+    df = df.rename(columns = {
+        'acq_date': 'detection_date',
+        'acq_time': 'detection_time',
+        'bright_ti4': 'brightness'
+    })
+    df['source_satellite'] = 'VIIRS_SNPP'
 
-    # Insert one row into raw_detections_table
+    # Bulk load to staging area
+    df[['source_satellite', 'detection_date', 'detection_time', 'latitude',
+        'longitude', 'brightness', 'confidence', 'frp']].to_sql(
+            name='staging_fire_detections',
+            con=engine,
+            if_exists='replace',
+            index=False
+        )
+    logger.info(f"Staged {len(df)} records to loading")
+
+    # Insert into raw_detections_table
     insert_sql = text("""
         INSERT INTO raw_fire_detections(
                 source_satellite,
@@ -114,41 +129,38 @@ def load_to_postgres(df: pd.DataFrame, database_url: str):
                 confidence,
                 frp,
                 geom
-            ) VALUES (
-                :satellite,
-                :detection_date,
-                :detection_time,
-                :latitude,
-                :longitude,
-                :brightness,
-                :confidence,
-                :frp,
-                ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)
-            )
+            ) SELECT 
+                source_satellite,
+                detection_date::date,
+                detection_time::text,
+                latitude,
+                longitude,
+                brightness,
+                confidence::text,
+                frp,
+                ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
+            FROM staging_fire_detections
             ON CONFLICT ON CONSTRAINT unique_detection DO NOTHING 
     """)
     
+    # Confirm how many were inserted
+    count_sql = text("""
+        SELECT COUNT(*) FROM raw_fire_detections
+        WHERE ingested_at >= NOW() - INTERVAL '1 minute'
+    """)
+    
+    # Delete staging area
+    drop_sql = text("Drop table if exists staging_fire_detections")
+
     # Roll into loop. Log error, but do not exit if single row does not ingest
     with engine.connect() as conn:
-        for _, row in df.iterrows():
-            try:
-                conn.execute(insert_sql, {
-                    'satellite': 'VIIRS_SNPP',
-                    'detection_date': row['acq_date'],
-                    'detection_time': row['acq_time'],
-                    'latitude': float(row['latitude']),
-                    'longitude': float(row['longitude']),
-                    'brightness': row['bright_ti4'],
-                    'confidence': str(row['confidence']),
-                    'frp': float(row['frp']),
-                })
-                records_loaded += 1
-            except Exception as e:
-                logger.error(f"Failed to insert row: {e}")
-                continue
+        conn.execute(insert_sql)
+        result = conn.execute(count_sql)
+        records_loaded = result.scalar()
+        conn.execute(drop_sql)
         conn.commit()
     
-    logger.info(f"There were {records_loaded} records loaded")
+    logger.info(f"Inserted {records_loaded} new records to raw_fire_detections table")
     return records_loaded
     
 
