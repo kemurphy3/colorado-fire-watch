@@ -1,0 +1,41 @@
+﻿name: Validate Pipeline
+
+on: [push, pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgis/postgis:15-3.3
+        env:
+          POSTGRES_DB: firewatch
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: firewatch
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate Python syntax
+        run: python -m py_compile ingestion/firms_ingest.py
+
+      - name: Test schema loads
+        run: psql postgresql://postgres:firewatch@localhost:5432/firewatch -f db/schema.sql
+        env:
+          PGPASSWORD: firewatch
