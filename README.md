@@ -1,60 +1,81 @@
 # Colorado Fire Watch
 
-A wildfire risk prediction tool that combines NEON's detailed ecological data with satellite imagery to map fire danger across Colorado.
+A wildfire intelligence system for Colorado combining near-real-time satellite fire detection with historical burn analysis.
 
 ## What this is
 
-Living in Colorado, wildfire season feels inevitable. Most fire risk models look at weather patterns and basic vegetation indices, but they miss a lot of the ground-level detail that actually matters.
+Living in Colorado, wildfire season feels inevitable. Most fire risk tools focus on weather patterns and simple vegetation indices, but they miss important spatial patterns in the detection data itself.
 
-This project tries something different. NEON's Aerial Observation Platform (AOP) team flies over the field sites in a pushbroom pattern using its sensors to capture hyperspectral, LiDAR, and high-resolution camera imagery data at an incredible resolution. The trade off is that the flightboxes for each site are typically only 10x10kms. In order to properly scale the fine NEON data, I'm developing a crosswalk to translate it to satellites like Sentinel-2 and MODIS that cover the whole state.
+This project works on two levels.
 
-## Why I'm building this
+The first is an operational layer that ingests near-real-time NASA satellite fire detections for Colorado, stores them in a spatial database, and enables spatial queries that answer specific questions: where detections cluster into likely fires, what the nearest detection is to a given location, which detections fall inside or near previous burn perimeters, and how activity changes over time.
 
-A few reasons:
-- The Cameron Peak Fire in 2020 burned right through areas near NEON's NIWO site. We have very useful before/after data
-- Traditional NDVI (vegetation greenness) completely misses drought-stressed conifers that still look green but are basically tinderboxes
-- I work with NEON data professionally and kept thinking "we could do something useful with this"
+The second is a scientific layer in development. NEON's Airborne Observation Platform flies over field sites in Colorado and captures hyperspectral imagery at 1-meter resolution. Traditional vegetation indices like NDVI often show drought-stressed conifers as healthy even when they are effectively dry fuel. The hyperspectral water content and red edge indices catch that stress earlier. The Cameron Peak Fire burned through terrain near NEON's Niwot Ridge site in 2020, and NEON has pre-fire flight data from 2019. That before-and-after dataset is the validation case for this approach. The goal is to transfer that detection capability to Sentinel-2 satellite data through a spectral crosswalk, enabling statewide vulnerability mapping that updates on Sentinel's five-day revisit cycle.
 
-## Current status
+## Why I built this
 
-Still early days. Right now I am:
-- Building the crosswalk between NEON's hyperspectral bands and Sentinel-2's multispectral ones
-- Setting up a basic web interface to visualize risk levels
+The Cameron Peak Fire in 2020 burned right through terrain near NEON's NIWO site. That site has detailed hyperspectral and lidar data from the year before. That is a rare and valuable dataset for understanding what pre-fire vegetation stress actually looks like in the data.
 
-## What's coming
+Standard NDVI would show those forests as healthy in 2019. The question this project is investigating is whether stress-sensitive hyperspectral indices would have shown something different before the fire started.
 
-**Soon:**
-- Basic risk map for Colorado using the NEON-to-Sentinel crosswalk
-- Validation against the Cameron Peak and East Troublesome fires
+I spent several years building and maintaining the AOP processing pipelines at NEON, so I understand this data from the inside. This project is what I kept thinking we could do with it.
 
-**Eventually:**
-- MODIS integration for daily updates (Sentinel only passes over every 5 days)
-- Expand to other western states with NEON sites
-- Add weather data, fuel moisture, etc
+## What works right now
+### Data pipeline
 
-**Maybe someday:**
-- Real-time smoke plume detection
-- Prescribed burn planning tools
-- API for other developers
+Near-real-time NASA FIRMS satellite fire detections for Colorado load automatically into a PostGIS spatial database. The pipeline validates data quality, prevents duplicates, logs every run, and sends an alert if something fails.
 
-## Tech stack
+### Historical fire perimeters
 
-- Python for all the heavy lifting (rasterio, xarray, scikit-learn)
-- PostGIS for spatial data
-- FastAPI for the backend
-- Still deciding on frontend (probably just React + Mapbox)
+Cameron Peak 2020, East Troublesome 2020, and Grizzly Creek 2020 are loaded from MTBS. These enable spatial queries asking whether current detections are occurring inside or near previous burn areas.
+
+### Spatial queries
+
+A set of PostGIS queries that convert raw detections into usable signals: nearest detection to a location, detections within a radius, clustering detections into likely fires, and spatial joins with historical burn perimeters.
+
+###  Infrastructure
+
+Runs locally with a single docker-compose up. Automated validation and tests run on every code push.
+
+## What is being built next
+
+Clustering detections into likely fires rather than individual points. Point-in-polygon joins showing which detections fall inside historical burn perimeters. A full operational situation report combining all of the above.
+
+After that, the hyperspectral work begins. Loading NEON AOP data for Niwot Ridge 2019, calculating stress indices that NDVI misses, and comparing the pre-fire signal against where Cameron Peak actually burned.
+
+Eventually a live map at coloradofirewatch.com showing current detections, historical context, and the vulnerability layer derived from the hyperspectral analysis.
+
+## Running locally
+
+You need Docker installed.
+```bash
+git clone https://github.com/kemurphy3/colorado-fire-watch
+cd colorado-fire-watch
+cp .env.example .env
+```
+
+Edit `.env` with your credentials:
+```
+FIRMS_API_KEY=your_nasa_firms_api_key_here
+DATABASE_URL=postgresql://postgres:firewatch@localhost:5432/firewatch
+ALERT_EMAIL=your_email_here
+ALERT_PASSWORD=your_gmail_app_password_here
+```
+
+Get a free FIRMS API key at https://firms.modaps.eosdis.nasa.gov/api/
+
+Then start the pipeline:
+```bash
+docker-compose up
+```
+
+Fire detections for Colorado load into the database automatically. Connect to PostgreSQL at localhost:5432, database firewatch, user postgres to run queries directly.
 
 ## Data sources
+NASA FIRMS VIIRS SNPP NRT: Near-real-time active fire detections. Citation: NASA FIRMS.
+MTBS Burned Area Boundaries: Historical fire perimeters 1984-2024. Citation: USGS and the MTBS program.
+NEON AOP (planned): Hyperspectral and lidar data from Colorado field sites. Funded by NSF award EF-1929435.
+Sentinel-2 (planned): ESA Copernicus program surface reflectance imagery
 
-- NEON AOP: Hyperspectral + LiDAR from their Colorado sites (NIWO, RMNP, CPER)
-- Sentinel-2: 10m resolution, every 5 days
-- MODIS: Daily coverage but coarser (250m-1km)
-- Historical fire perimeters from MTBS and GeoMAC
-
-## Contributing
-
-Open an issue or submit a PR if you're interested in contributing.
-
-## License
-
-MIT - use it however you want.
+## Disclaimer
+This system is research grade and has not been operationally certified by any fire management agency. Data may be delayed, incomplete, or inaccurate. Decisions about life safety should never be based solely on this system.
