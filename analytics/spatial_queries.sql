@@ -85,3 +85,17 @@ JOIN fire_perimeters p ON ST_DWithin(f.geom::geography, p.geom::geography, 10000
 WHERE NOT ST_Within(f.geom, p.geom)
     AND detection_date >= CURRENT_DATE - INTERVAL '14 days'
 ORDER BY km_outside_boundary DESC;
+
+
+-- Clusters nearby detections into likely fires
+SELECT 
+    detection_id,
+    detection_date,
+    latitude,
+    longitude,
+    brightness,
+    confidence,
+    ST_ClusterDBSCAN(ST_Transform(geom, 26913), eps := 5000, minpoints := 2) OVER () as cluster_id
+FROM raw_fire_detections
+WHERE detection_date >= CURRENT_DATE - INTERVAL '14 days'
+ORDER BY cluster_id NULLS LAST, brightness DESC;
