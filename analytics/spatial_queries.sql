@@ -16,6 +16,7 @@ SELECT
                 OR longitude > -102.04 THEN 1 END) as outside_colorado
 FROM raw_fire_detections;
 
+
 -- Find the nearest detections to Boulder
 -- Note that this is all thermal anomalies, not just confirmed fires
 SELECT
@@ -54,3 +55,33 @@ WHERE ST_DWithin(
 AND confidence = 'h'
 AND detection_date >= CURRENT_DATE - INTERVAL '7 days'
 ORDER BY geom <-> ST_SetSRID(ST_MakePoint(-105.2705, 40.0150), 4326);
+
+-- Determines which current fire detections fall inside a historical burn area
+-- Fire behaves differently inside burn scars vs in unburned forest
+SELECT
+    detection_id,
+    detection_date,
+    brightness,
+    confidence,
+    fire_name,
+    fire_year,
+    ST_Distance(f.geom::geography, ST_Boundary(p.geom)::geography) / 1000 as km_from_edge
+FROM raw_fire_detections f
+JOIN fire_perimeters p ON ST_Within(f.geom, p.geom)
+WHERE detection_date >= CURRENT_DATE - INTERVAL '14 days'
+ORDER BY detection_date DESC;
+
+-- Considers the boundaries of historical burn scars and determines whether detections are within 10km of a perimeter boundary
+SELECT
+    detection_id,
+    detection_date,
+    brightness,
+    confidence,
+    fire_name,
+    fire_year,
+    ST_Distance(f.geom::geography, ST_Boundary(p.geom)::geography) / 1000 as km_outside_boundary
+FROM raw_fire_detections f
+JOIN fire_perimeters p ON ST_DWithin(f.geom::geography, p.geom::geography, 10000)
+WHERE NOT ST_Within(f.geom, p.geom)
+    AND detection_date >= CURRENT_DATE - INTERVAL '14 days'
+ORDER BY km_outside_boundary DESC;
