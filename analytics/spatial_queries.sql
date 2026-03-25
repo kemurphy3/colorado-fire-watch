@@ -99,3 +99,34 @@ SELECT
 FROM raw_fire_detections
 WHERE detection_date >= CURRENT_DATE - INTERVAL '14 days'
 ORDER BY cluster_id NULLS LAST, brightness DESC;
+
+
+-- Group clusters together and store one centroid as the source of the fire to illustrate on maps
+-- Wraps above in a CTE and then groups by cluster_id
+WITH clustered AS (
+    SELECT 
+        detection_id,
+        detection_date,
+        latitude,
+        longitude,
+        brightness,
+        confidence,
+        ST_ClusterDBSCAN(ST_Transform(geom, 26913), eps := 5000, minpoints := 2) OVER () as cluster_id
+    FROM raw_fire_detections
+    WHERE detection_date >= CURRENT_DATE - INTERVAL '14 days'
+    ORDER BY cluster_id NULLS LAST, brightness DESC
+)
+SELECT 
+    cluster_id,
+    COUNT(clustered.detection_id),
+    AVG(clustered.longitude) AS centroid_lon,
+    AVG(clustered.latitude) AS centroid_lat,
+    MAX(clustered.brightness) AS max_brightness,
+    AVG(clustered.brightness) AS avg_brightness,
+    MIN(detection_date) AS first_detected,
+    MAX(detection_date) AS last_detected,
+    bool_or(confidence='h') AS has_high_confidence
+FROM clustered
+WHERE cluster_id IS NOT NULL
+GROUP BY cluster_id
+ORDER BY max_brightness DESC;
