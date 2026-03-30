@@ -130,3 +130,19 @@ FROM clustered
 WHERE cluster_id IS NOT NULL
 GROUP BY cluster_id
 ORDER BY max_brightness DESC;
+
+
+-- Divides CO into a grid and then counts the detections per cell over the last 30 days
+-- Limitation to note, degree-based cells aren't exactly equal area so lower latitude cells
+-- Will be larger than higher latitude cells
+SELECT
+    ST_X(ST_SnapToGrid(geom, 0.5)) AS cell_lon,
+    ST_Y(ST_SnapToGrid(geom, 0.5)) AS cell_lat,
+    COUNT(*) AS detection_count,
+    AVG(brightness) AS avg_brightness,
+    MAX(frp) AS max_frp,
+    MIN(detection_date) AS early_date,
+    MAX(detection_date) AS last_date
+FROM raw_fire_detections
+WHERE detection_date >=CURRENT_DATE - INTERVAL '30 days'
+GROUP BY ST_SnapToGrid(geom, 0.5);
