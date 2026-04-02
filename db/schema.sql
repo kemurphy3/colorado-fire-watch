@@ -1,4 +1,4 @@
-﻿-- Enable PostGIS extension
+-- Enable PostGIS extension
 -- This adds spatial data types and functions to PostgreSQL
 -- Without this, geometry columns and ST_ functions do not exist
 CREATE EXTENSION IF NOT EXISTS postgis;

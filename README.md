@@ -1,6 +1,6 @@
 # Colorado Fire Watch
 
-A wildfire intelligence system for Colorado combining near-real-time satellite fire detection with historical burn analysis.
+A PostGIS-based geospatial pipeline for Colorado that ingests satellite fire detections and supports spatial analytics against historical burn perimeters.
 
 ## What this is
 
@@ -31,7 +31,7 @@ Cameron Peak 2020, East Troublesome 2020, and Grizzly Creek 2020 are loaded from
 
 ### Spatial queries
 
-A set of PostGIS queries that convert raw detections into usable signals: nearest detection to a location, detections within a radius, clustering detections into likely fires, and spatial joins with historical burn perimeters.
+A set of PostGIS queries that convert raw detections into usable signals: nearest detection to a location, detections within a radius, clustering detections into likely fires, and spatial joins with historical burn perimeters, detection density grids, temporal overpass patterns, rolling daily trends, and a full operational situation report combining all of the above. Key queries were validated with EXPLAIN ANALYZE to confirm GiST spatial index usage.
 
 ###  Infrastructure
 
@@ -39,11 +39,11 @@ Runs locally with a single docker-compose up. Automated validation and tests run
 
 ## What is being built next
 
-Clustering detections into likely fires rather than individual points. Point-in-polygon joins showing which detections fall inside historical burn perimeters. A full operational situation report combining all of the above.
+A live map at coloradofirewatch.com showing clustered fire detections, burn perimeter context, and a situation report updated on each pipeline run.  
 
-After that, the hyperspectral work begins. Loading NEON AOP data for Niwot Ridge 2019, calculating stress indices that NDVI misses, and comparing the pre-fire signal against where Cameron Peak actually burned.
+After that, a cloud database migration to Supabase so the site stays live independent of a local machine. 
 
-Eventually a live map at coloradofirewatch.com showing current detections, historical context, and the vulnerability layer derived from the hyperspectral analysis.
+Then the hyperspectral work begins. Loading NEON AOP data for Niwot Ridge 2019 via Google Earth Engine, calculating water content and red edge stress indices that NDVI misses, and comparing the pre-fire signal against where Cameron Peak actually burned in 2020. The goal is to transfer that detection capability to Sentinel-2 for statewide vulnerability mapping.
 
 ## Running locally
 

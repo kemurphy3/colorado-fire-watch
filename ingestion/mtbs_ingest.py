@@ -50,7 +50,6 @@ def load_fire_perimeters(shapefile_path: str, fire_names: list, years: list, sta
                                             (fire_name, fire_year, state, acres, geom)
                                           VALUES
                                             (:name, :year, :state, :acres, ST_Multi(ST_SetSRID(ST_GeomFromText(:geom), 4326)))
-                                          ON CONFLICT DO NOTHING
                                           '''), {
                                               'name': row['Incid_Name'],
                                               'year': int(row['year']),
@@ -76,8 +75,12 @@ def main():
         logger.error('DATABASE_URL not found in .env')
         return
     
+    shapefile_path = os.getenv(
+        "MTBS_SHAPEFILE_PATH",
+        "/tmp/mtbs/mtbs_perims_DD.shp",
+    )
     load_fire_perimeters(
-        shapefile_path='/tmp/mtbs/mtbs_perims_DD.shp',
+        shapefile_path=shapefile_path,
         fire_names=['CAMERON PEAK', 'CREEK', 'EAST TROUBLESOME'],
         years=[2020],
         state='CO',
