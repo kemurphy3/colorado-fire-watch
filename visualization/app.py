@@ -2,6 +2,7 @@ import streamlit as st
 import pydeck as pdk
 import pandas as pd
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv
 import os
 import json
@@ -16,7 +17,12 @@ st.set_page_config(
 st.title("Colorado Fire Watch")
 st.caption("Near-real-time NASA satellite fire detection in Colorado")
 
-engine = create_engine(os.getenv("DATABASE_URL"))
+_db_url = os.getenv("DATABASE_URL")
+if not _db_url:
+    st.error("Set **DATABASE_URL** in `.env` at the project root (or in deployment secrets).")
+    st.stop()
+
+engine = create_engine(_db_url, pool_pre_ping=True)
 
 def get_clusters():
     with engine.connect() as conn:
@@ -157,12 +163,62 @@ def dataframe_to_pydeck_records(df: pd.DataFrame, cols: list[str]) -> list[dict]
     return out
 
 
-df_clusters = get_clusters()
-df_clusters['max_brightness'] = df_clusters['max_brightness'].astype(float).round(1)
-df_clusters['detection_count'] = df_clusters['detection_count'].astype(int)
-df_clusters['last_detected'] = df_clusters['last_detected'].astype(str)
-df_trend = get_daily_trend()
-df_perimeters = get_perimeters()
+def _last_detected_label(df: pd.DataFrame) -> str:
+    if df.empty:
+        return "—"
+    m = df["last_detected"].max()
+    if pd.isna(m):
+        return "—"
+    return str(m)
+
+
+def _db_err_text(exc: BaseException) -> str:
+    if isinstance(exc, OperationalError) and getattr(exc, "orig", None):
+        return str(exc.orig)
+    return str(exc)
+
+
+try:
+    df_clusters = get_clusters()
+    df_clusters["max_brightness"] = df_clusters["max_brightness"].astype(float).round(1)
+    df_clusters["detection_count"] = df_clusters["detection_count"].astype(int)
+    df_clusters["last_detected"] = df_clusters["last_detected"].astype(str)
+    df_trend = get_daily_trend()
+    df_perimeters = get_perimeters()
+except OperationalError as e:
+    msg = _db_err_text(e)
+    if (
+        "could not translate host name" in msg
+        or "getaddrinfo" in msg.lower()
+        or "Name or service not known" in msg
+    ):
+        st.error("Could not resolve the database host (common on Windows with Supabase).")
+        st.markdown(
+            r"""
+**This is not a Docker issue.** Your app reads **`DATABASE_URL`** from `.env` only.
+
+The direct host **`db.<project>.supabase.co`** often has **IPv6-only** DNS. Many Windows/Python stacks
+then fail DNS (`getaddrinfo` / could not translate host name).
+
+**Fix — use one of these:**
+
+1. **Session pooler URI (recommended)**  
+   Supabase → **Project Settings** → **Database** → **Connection string** → choose **Session pooler**
+   (or **Transaction** if you use port 6543). Copy the URI — host looks like **`…pooler.supabase.com`**
+   and usually works over **IPv4**.  
+   Set that full string as **`DATABASE_URL`** (keep `?sslmode=require` or add `&sslmode=require`).  
+   Pooler usernames often look like **`postgres.<project-ref>`** — use exactly what the dashboard shows.
+
+2. **IPv4 add-on**  
+   Supabase → **Project Settings** → **Add-ons** → **IPv4** for the project, then the direct `db.*` host
+   can work from IPv4-only networks.
+
+3. **Quick check:** `nslookup -type=A your-hostname` — if there is **no A record**, use (1) or (2).
+"""
+        )
+        st.stop()
+    raise
+
 perimeter_geojson = perimeters_to_geojson(df_perimeters)
 
 map_cols = [
@@ -204,9 +260,29 @@ view = pdk.ViewState(
     pitch=0
 )
 
+if df_clusters.empty and df_perimeters.empty:
+    st.info(
+        "Database is connected, but **there is no data to display yet**. "
+        "Point **`DATABASE_URL`** at this Supabase project and run **`python -m ingestion.firms_ingest`** "
+        "(with **`FIRMS_API_KEY`** set) to fill `raw_fire_detections`. "
+        "Optional: run **`python -m ingestion.mtbs_ingest`** after configuring the MTBS shapefile path for `fire_perimeters`."
+    )
+elif df_clusters.empty:
+    st.warning(
+        "No detection **clusters** in the last **14 days** — either ingest new FIRMS data, "
+        "or your `raw_fire_detections` rows are older than the rolling window."
+    )
+elif df_perimeters.empty:
+    st.info(
+        "**Historical perimeters:** the `fire_perimeters` table has no rows in this database yet. "
+        "FIRMS and MTBS are separate loads. Download the MTBS perimeter shapefile, set **`MTBS_SHAPEFILE_PATH`** "
+        "in `.env`, keep **`DATABASE_URL`** pointed at Supabase, then run: "
+        "`python -m ingestion.mtbs_ingest`"
+    )
+
 with st.sidebar:
     st.header("Situation Report")
-    st.caption(f"Last updated: {df_clusters['last_detected'].max()}")
+    st.caption(f"Last updated: {_last_detected_label(df_clusters)}")
 
     st.metric("Active Clusters", len(df_clusters))
     st.metric("Total Detections", int(df_clusters["detection_count"].sum()))

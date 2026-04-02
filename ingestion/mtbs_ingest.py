@@ -8,8 +8,8 @@ import os
 import logging
 from dotenv import load_dotenv
 
-# Load the environment and start the processing clock
-load_dotenv()
+# Load .env from repo root (works when run as `python -m ingestion.mtbs_ingest` from any cwd)
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -79,13 +79,18 @@ def main():
         "MTBS_SHAPEFILE_PATH",
         "/tmp/mtbs/mtbs_perims_DD.shp",
     )
-    load_fire_perimeters(
+    if not os.path.isfile(shapefile_path):
+        logger.error("Shapefile not found at %s — set MTBS_SHAPEFILE_PATH in .env", shapefile_path)
+        return
+
+    n = load_fire_perimeters(
         shapefile_path=shapefile_path,
         fire_names=['CAMERON PEAK', 'CREEK', 'EAST TROUBLESOME'],
         years=[2020],
         state='CO',
         database_url=database_url
     )
+    logger.info("Finished loading MTBS perimeters: %s rows inserted", n)
 
 
 if __name__ == '__main__':
