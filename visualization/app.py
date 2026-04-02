@@ -9,13 +9,55 @@ import json
 
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
+# Mapbox basemaps (PyDeck) read MAPBOX_API_KEY in hosted environments
+_mapbox = os.getenv("MAPBOX_API_KEY")
+if _mapbox:
+    os.environ["MAPBOX_API_KEY"] = _mapbox
+
 st.set_page_config(
     page_title="Colorado Fire Watch",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+st.markdown(
+    """
+    <style>
+        .block-container h1 {
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            margin-bottom: 0.15rem;
+        }
+        p.cfw-lead {
+            color: #9aa0a6;
+            font-size: 1.05rem;
+            margin-top: 0;
+            margin-bottom: 1.25rem;
+        }
+        div[data-testid="stMetricValue"] {
+            font-variant-numeric: tabular-nums;
+        }
+        .cfw-footer {
+            font-size: 0.82rem;
+            color: #8b949e;
+            margin-top: 2rem;
+            padding-top: 1.1rem;
+            border-top: 1px solid #30363d;
+            line-height: 1.5;
+        }
+        .cfw-footer a { color: #e0702e; text-decoration: none; }
+        .cfw-footer a:hover { text-decoration: underline; }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 st.title("Colorado Fire Watch")
-st.caption("Near-real-time NASA satellite fire detection in Colorado")
+st.markdown(
+    '<p class="cfw-lead">Near-real-time NASA VIIRS fire detections in Colorado, '
+    "clustered in PostGIS, with optional MTBS historical burn perimeters for context.</p>",
+    unsafe_allow_html=True,
+)
 
 _db_url = os.getenv("DATABASE_URL")
 if not _db_url:
@@ -308,13 +350,23 @@ with st.sidebar:
             st.write(f"High confidence: {'Yes' if row['has_high_confidence'] else 'No'}")
             st.write(f"Location: {row['centroid_lat']:.3f}, {row['centroid_lon']:.3f}")
 
+    st.divider()
+    with st.expander("About"):
+        st.markdown(
+            "**Stack:** Streamlit, PyDeck, PostGIS (Supabase), SQLAlchemy. "
+            "Detections from NASA FIRMS; historical shapes from MTBS where loaded.\n\n"
+            "**Note:** For research and situational awareness only. "
+            "Not an official fire-management or life-safety system.\n\n"
+            "[Source on GitHub](https://github.com/kemurphy3/colorado-fire-watch)"
+        )
+
 map_layers = [layer]
 if show_historical:
     map_layers.insert(0, perimeter_layer)
 
-st.caption(
-    "**Legend:** Orange dots = FIRMS detection clusters (rolling 14 days). "
-    "Blue-gray polygons = **historical** MTBS burn boundaries (past fires only; not active perimeters). "
+st.markdown(
+    "**Map legend:** Orange points are VIIRS detection clusters (last 14 days). "
+    "Blue-gray polygons are **historical** MTBS burn boundaries (past mapped perimeters only). "
     "Toggle MTBS in the sidebar."
 )
 
@@ -334,9 +386,10 @@ st.pydeck_chart(
                 "<b>Fire:</b> {fire_name}<br/>"
                 "<b>Year:</b> {fire_year} &nbsp; <b>Acres:</b> {acres}"
             ),
-            "style": {"backgroundColor": "#2e4057", "color": "white"},
+            "style": {"backgroundColor": "#1e2a36", "color": "#e8eaed"},
         },
-    )
+    ),
+    use_container_width=True,
 )
 
 st.subheader("Detection Trend")
@@ -350,3 +403,15 @@ if trend_chart_df.dropna(how="all").empty:
     st.info("No trend data available yet. Add more detections to see the chart.")
 else:
     st.line_chart(trend_chart_df)
+
+st.markdown(
+    """
+    <div class="cfw-footer">
+    <strong>Data sources:</strong> NASA FIRMS VIIRS near-real-time detections; USGS MTBS historical burn perimeters where ingested.
+    Citations: NASA FIRMS; MTBS program.
+    This tool is not operationally certified for emergency response.
+    <a href="https://github.com/kemurphy3/colorado-fire-watch" target="_blank" rel="noopener noreferrer">Repository</a>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
